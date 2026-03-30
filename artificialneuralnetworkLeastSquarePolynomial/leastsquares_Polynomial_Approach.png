@@ -1,0 +1,101 @@
+% main SEAN H File
+function [weights,bias,errorPlotHandle] = fitFunctionANN_1D_studentVersion(targets,inputs,learnRateW,learnRateB,trainingIterations)
+    
+    [N,targets,inputs,errorArray,errorPlotHandle] = parseInputs(targets,inputs,trainingIterations);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    [weights,bias] = initializeWeightsAndBiases(N);  % initialize Weights
+
+
+    %Train Neural Network
+    [weights,bias] = trainNeuralNetwork(inputs,targets,weights,bias,learnRateW,learnRateB,errorArray,errorPlotHandle,trainingIterations);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+end
+
+
+% non-main functions
+function [N,targets,inputs,errorArray,errorPlotHandle] = parseInputs(targets,inputs,trainingIterations)
+    
+    N = size(inputs,1);
+
+    % this is a nice way to parallelize calculations
+    targets = reshape(targets(:),1,1,[]);
+    inputs = reshape(inputs,N,1,[]);
+    
+    % initialize errorArray for plotting
+    errorArray = nan(1,trainingIterations);
+    
+    % set up figure and plotting
+    figure('color','w','Units','normalized','Position',[0.5,0.5,0.3,0.25]);
+    errorPlotHandle = semilogy(1:trainingIterations,errorArray,'Color','k','LineWidth',2);
+    yl = ylabel('Log(Error)');
+    xl = xlabel('Iteration #');
+    set([gca,xl,yl],'fontSize',14,'fontWeight','bold');
+    axis tight;
+    
+end
+
+function [weights,bias] = initializeWeightsAndBiases(N)
+
+    % ANN is pretty insensitive to initializations
+    weights = 2*(rand(1,N)-0.5);
+    bias = rand(1)-0.5;
+    
+end
+
+function [weights,bias] = trainNeuralNetwork(inputs,targets,weights,bias,learnRateW,learnRateB,errorArray,errorPlotHandle,trainingIterations)
+    
+    % this is the 'outer-loop' that controls how many total ANN iterations
+    % we will perform while monitoring the error
+    for i=1:trainingIterations
+        
+        % forward propagate through ANN
+        [outputs,error] = forwardPropagate(inputs,targets,weights,bias);
+        
+        % assign caclulated error to errorArray for plotting
+        errorArray(i) = error;
+        % update plot every trainingIterations/100 number of iterations
+        if mod(i,trainingIterations/100)==0
+            set(errorPlotHandle,'YData',errorArray); drawnow;
+            
+        end
+        
+        % backward propagation. Amounts to solving for gradients
+        [dCdw,dCdb] = backwardPropagate(targets,inputs,outputs);
+        
+        % updating the network by adjusting weights and biases
+        [weights,bias] = updateNetworkParameters(weights,bias,dCdw,dCdb,learnRateW,learnRateB);
+        
+    end
+    disp(['>> End error: ',num2str(error)]);
+    
+end
+
+function [outputs,error] = forwardPropagate(inputs,targets,weights,bias)
+    
+    % parallelized 'matrix' multiplication
+    outputs = pagemtimes(weights,inputs) + bias;
+
+    % mse rather than rmse
+    error = mean( (outputs-targets).^2, 3);
+    
+end
+
+function [dCdw,dCdb] = backwardPropagate(targets,inputs,outputs)
+    
+    % bias gradient
+    dCdb = 2*(outputs-targets); %look at the gray blocks in mathematica
+    % for this
+    
+    % weight gradient
+    dCdw = inputs.*dCdb;
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+end
+
+function [weights,bias] = updateNetworkParameters(weights,bias,dCdw,dCdb,learnRateW,learnRateB)
+    
+    weights = weights - learnRateW .* mean(dCdw,3).';
+    bias = bias - learnRateB .* mean(dCdb,3);
+    
+end
