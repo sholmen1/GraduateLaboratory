@@ -1,0 +1,187 @@
+% Read In Data of Electric Fields:
+electricFields = readmatrix('electricFields.csv');
+t = electricFields(:,1);
+E1 = electricFields(:,2);
+E2 = electricFields(:,3);
+
+N = length(t);
+
+% Plot 1: Time domain fields (you already have this)
+figure;
+subplot(2,3,1);
+plot(t, real(E1), 'r-');
+hold on;
+plot(t, real(E2), 'b-');
+xlabel('Time (fs)');
+ylabel('E(t) [a.u.]');
+title('Time Domain Electric Fields');
+legend('E1', 'E2');
+
+
+dt = t(2)-t(1); %time step
+fMax = 1/(2*dt); %Nyquist Frequency
+df = 1/(N*dt); 
+
+% Create frequency grid
+tau = (-N/2:N/2-1) * dt;
+f = (-N/2:N/2-1) * df;  % frequency grid
+omega = 2*pi*f;         % angular frequency grid
+
+cross_corr = ifft(fft(E1) .* conj(fft(E2)));
+I_tau = 2 * real(cross_corr);
+
+% Center zero-lag, remove DC, normalize
+I_tau = fftshift(I_tau);
+I_tau = I_tau - mean(I_tau);
+I_tau = I_tau / max(abs(I_tau));
+
+% Plot 2: Cross-correlation
+subplot(2,3,2);
+plot(tau, I_tau, 'LineWidth', 1.5);
+xlabel('time [fs]');
+ylabel('Correlation [a.u.]');
+title('Circular Cross-correlation');
+grid on;
+
+% Fourier transform of correlation
+I_omega =  fftshift(fft(ifftshift(I_tau))) ;
+I_omega = I_omega/max(I_omega);
+
+
+% Plot 3: Fourier transform of correlation
+subplot(2,3,3);
+plot(f, I_omega,'LineWidth', 1.5);
+xlabel('\omega [1/fs]');
+ylabel('FT(Correlation) [a.u.]');
+title('Fourier Transform of Correlation [a.u.]');
+grid on;
+
+% Step 9: Extract spectrum and phase from the positive frequency part
+% Find the indices for positive frequencies
+pos_freq_idx = f > 0;
+f_pos = f(pos_freq_idx);
+I_omega_pos = I_omega(pos_freq_idx);
+
+% Extract amplitude (spectrum) and phase
+A = abs(I_omega_pos);
+
+A = A/(max(A(:)));
+
+mask = A>0.1;
+
+phase = angle(I_omega_pos);
+
+% Unwrap phase to remove 2π jumps
+phase_unwrapped = unwrap(phase);
+
+% Plot 4: Spectrum and phase
+subplot(2,3,4);
+yyaxis left
+plot(f_pos, A, 'LineWidth', 2);
+ylabel('Spectrum/Phase [rad]', 'Color', 'b');
+xlabel('\omega [1/fs]');
+
+yyaxis right  
+plot(f_pos, phase_unwrapped, 'k', 'LineWidth', 1.5);
+hold on;
+yyaxis right  
+plot(f_pos, phase_unwrapped, 'g--', 'LineWidth', 1);
+ylabel('Phase (rad)', 'Color', 'k');
+title('Spectrum and Phase');
+grid on;
+
+% Fit polynomial to phase (3rd order for example)
+f_fit = f_pos(mask);
+phasefit = phase_unwrapped(mask);
+
+order=4;
+p = polyfit(f_fit, phasefit, order);
+
+% Evaluate polynomial at frequency points
+phase_fit = polyval(p, f_fit);
+
+% Plot 5: Phase fit comparison
+subplot(2,3,5);
+plot(f_fit, phasefit, 'k-', 'LineWidth', 1.5, 'DisplayName', 'Original Phase');
+hold on;
+plot(f_fit, phase_fit, 'r--', 'LineWidth', 2, 'DisplayName', 'Polynomial Fit');
+xlabel('\omega [1/fs]');
+ylabel('Phase (rad)');
+title('Phase and Polynomial Fit');
+legend;
+grid on;
+
+
+% Calculate R-squared value (FIXED)
+SS_res = sum((phasefit - phase_fit(:)).^2);
+SS_tot = sum((phasefit - mean(phasefit)).^2);
+R_squared = 1 - (SS_res / SS_tot);
+
+% Display polynomial coefficients and R-squared
+fprintf('\n=== POLYNOMIAL FIT RESULTS ===\n');
+fprintf('Polynomial order: %d\n', order);
+fprintf('Coefficients (highest to lowest order):\n');
+for i = 1:length(p)
+    fprintf('  p(%d) = %.6e\n', i, p(i));
+end
+fprintf('R-squared value: %.6f\n', R_squared);
+
+% Calculate GDD (Group Delay Dispersion)
+% For polynomial p(x) = a*x^3 + b*x^2 + c*x + d
+% Second derivative at x=0 is 2*b (coefficient of x^2 term)
+GDD_coeff = p(end-2); % Second order coefficient
+GDD = 2 * GDD_coeff; % GDD in fs^2
+fprintf('GDD_coeff value: %.6f\n', GDD_coeff);
+fprintf('GDD value in fs^2/mm: %.6f\n ', GDD);
+fprintf('GDD is close to, refractiveindex.info, that of BAF10 SCHOTT glass fs^2/mm: %.6f\n', 300.41);
+
+% First, calculate the mean frequency (first moment)
+mean_freq = sum(f_pos(:) .* A) / sum(A);
+
+% Second moment (variance)
+second_moment = sum(((f_pos(:) - mean_freq).^2) .* A) / sum(A);
+
+% Third moment (for skewness calculation)
+third_moment = sum(((f_pos(:) - mean_freq).^3) .* A) / sum(A);
+
+% Fourth moment (for kurtosis calculation)
+fourth_moment = sum(((f_pos(:) - mean_freq).^4) .* A) / sum(A);
+
+% Calculate skewness and kurtosis
+skewness = third_moment / (second_moment^(3/2));
+kurtosis = fourth_moment / (second_moment^2);
+
+% Display statistical moments
+fprintf('\n=== STATISTICAL MOMENTS OF SPECTRUM ===\n');
+fprintf('Mean frequency: %.6f THz\n', mean_freq);
+fprintf('Second moment (variance): %.6e THz^2\n', second_moment);
+fprintf('Skewness: %.6f\n', skewness);
+fprintf('Kurtosis: %.6f\n', kurtosis);
+
+% Plot 6: Spectrum with statistical information
+subplot(2,3,6);
+plot(f_pos, A, 'b-', 'LineWidth', 2);
+hold on;
+xline(mean_freq, 'r--', 'LineWidth', 2, 'DisplayName', sprintf('Mean: %.2f THz', mean_freq));
+xlabel('\omega [1/fs]');
+ylabel('Normalized Spectrum');
+title('Spectrum with Statistical Moments');
+legend('Spectrum', sprintf('Mean = %.2f THz', mean_freq));
+grid on;
+
+fprintf('\n=== ANSWERS TO QUESTIONS ===\n');
+fprintf('1. Structure of reconstructed field:\n');
+fprintf('   The time domain fields appear noisy because they contain broadband\n');
+fprintf('   white light with random phase relationships. The reconstruction reveals\n');
+fprintf('   the underlying spectral structure through cross-correlation analysis.\n\n');
+
+fprintf('2. Asymmetry of cross-correlation:\n');
+fprintf('   The cross-correlation is asymmetric because E1 and E2 have different\n');
+fprintf('   phase relationships. If they were identical, the correlation would be\n');
+fprintf('   symmetric (even function).\n\n');
+
+fprintf('3. Polynomial coefficients explanation:\n');
+fprintf('   The dominant parabolic (2nd order) term corresponds to group delay\n');
+fprintf('   dispersion (GDD) from the material. This quadratic phase term dominates\n');
+fprintf('   because most transparent materials have approximately linear dispersion\n');
+fprintf('   in the visible/near-IR range, leading to quadratic spectral phase.\n');
